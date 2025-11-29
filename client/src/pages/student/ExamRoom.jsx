@@ -1,3 +1,10 @@
+// ===================================================================
+// CLIENT: COMPLETE & CORRECTED FILE
+// ===================================================================
+
+// -------------------------------------------------------------------
+// FILE: client/src/pages/student/ExamRoom.jsx
+// -------------------------------------------------------------------
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -6,7 +13,7 @@ import { startExamById } from '../../api/exams';
 import { startStudentExam, updateStudentExam } from '../../api/submissions';
 import { startProctoring, stopProctoring, loadModel } from '../../lib/proctoringService';
 import io from 'socket.io-client';
-import { ChevronLeft, ChevronRight, Video, Timer, AlertCircle, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Video, Timer, AlertCircle, CheckCircle, Maximize } from 'lucide-react';
 import Button from '../../components/common/Button';
 
 const ExamRoom = () => {
@@ -26,16 +33,56 @@ const ExamRoom = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWebcamReady, setIsWebcamReady] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
+  
+  // New State for Full Screen
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
 
   const videoRef = useRef(null);
   const socketRef = useRef(null);
   const lastViolationRef = useRef(null);
+  const containerRef = useRef(null); // Ref for the main container
   const violationLimit = 5;
+
+  // --- FULL SCREEN LOGIC ---
+  const enterFullScreen = async () => {
+    try {
+        if (containerRef.current) {
+            await containerRef.current.requestFullscreen();
+            setIsFullScreen(true);
+            setHasStarted(true);
+        }
+    } catch (err) {
+        console.error("Error attempting to enable full-screen mode:", err);
+    }
+  };
+
+  const handleFullScreenChange = useCallback(() => {
+      if (!document.fullscreenElement) {
+          setIsFullScreen(false);
+          // Optional: Add a violation if they exit full screen?
+          // handleViolation('Exited Full Screen'); 
+      } else {
+          setIsFullScreen(true);
+      }
+  }, []);
+
+  useEffect(() => {
+      document.addEventListener('fullscreenchange', handleFullScreenChange);
+      return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
+  }, [handleFullScreenChange]);
+
 
   const handleExamSubmit = useCallback(async (reason = "User submitted") => {
     if (isSubmitting || !submissionId) return;
     setIsSubmitting(true);
     stopProctoring();
+    
+    // Exit full screen on submit
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.log(err));
+    }
+
     try {
       await updateStudentExam(submissionId, answers, token);
       if (reason === 'auto-submit') {
@@ -76,33 +123,32 @@ const ExamRoom = () => {
   useEffect(() => {
     loadModel().then(() => setIsModelReady(true));
     
-    startWebcam()
-      .then(stream => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadeddata = () => setIsWebcamReady(true);
-        }
-      })
-      .catch(() => setError('Webcam access is required. Please enable it and refresh.'));
+    // Don't start webcam immediately, wait for user to click start
+    if (hasStarted) {
+        startWebcam()
+        .then(stream => {
+            if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.onloadeddata = () => setIsWebcamReady(true);
+            }
+        })
+        .catch(() => setError('Webcam access is required. Please enable it and refresh.'));
+    }
 
     return () => stopWebcam();
-  }, [startWebcam, stopWebcam]);
+  }, [startWebcam, stopWebcam, hasStarted]);
 
   useEffect(() => {
-    // This effect now includes the "warm-up" period
-    if (isWebcamReady && isModelReady && videoRef.current) {
-      console.log("Webcam and Model are ready. Starting proctoring in 3 seconds...");
+    if (hasStarted && isWebcamReady && isModelReady && videoRef.current) {
       const proctoringTimeout = setTimeout(() => {
-        console.log("Proctoring started.");
         startProctoring(videoRef.current, handleViolation);
-      }, 3000); // 3-second grace period
-
+      }, 3000);
       return () => {
         clearTimeout(proctoringTimeout);
         stopProctoring();
       };
     }
-  }, [isWebcamReady, isModelReady, handleViolation]);
+  }, [hasStarted, isWebcamReady, isModelReady, handleViolation]);
 
   useEffect(() => {
     const setup = async () => {
@@ -117,7 +163,7 @@ const ExamRoom = () => {
           initialAnswers[q._id] = q.questionType === 'mcq' ? null : '';
         });
         setAnswers(initialAnswers);
-        socketRef.current = io(import.meta.env.VITE_API_URL);
+        socketRef.current = io('http://localhost:5000');
         socketRef.current.on('connect', () => {
           socketRef.current.emit('join-exam-room', { submissionId: subData.submissionId });
         });
@@ -134,6 +180,8 @@ const ExamRoom = () => {
   }, [examId, token]);
 
   useEffect(() => {
+    if (!hasStarted) return; // Don't track visibility until exam starts
+
     const handleVisibilityChange = () => {
       if (document.hidden) handleViolation('Left the page');
     };
@@ -144,16 +192,18 @@ const ExamRoom = () => {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [handleViolation]);
+  }, [handleViolation, hasStarted]);
 
   useEffect(() => {
+    if (!hasStarted) return; // Don't start timer until exam starts
+
     if (!isSubmitting && timeLeft <= 0 && exam) {
       handleExamSubmit('time-up');
     }
     if (!exam || isSubmitting) return;
     const timer = setInterval(() => setTimeLeft(prev => prev > 0 ? prev - 1 : 0), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, exam, handleExamSubmit, isSubmitting]);
+  }, [timeLeft, exam, handleExamSubmit, isSubmitting, hasStarted]);
 
   const handleAnswerChange = (questionId, value) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
@@ -166,13 +216,42 @@ const ExamRoom = () => {
     return `${h}:${m}:${s}`;
   };
 
-  if (loading) return <div className="flex items-center justify-center h-screen">Starting Exam...</div>;
+  if (loading) return <div className="flex items-center justify-center h-screen">Loading Exam...</div>;
   if (error) return <div className="flex items-center justify-center h-screen text-red-500 font-bold text-xl p-8 text-center">{error}</div>;
+
+  // --- OVERLAY FOR STARTING EXAM ---
+  if (!hasStarted) {
+      return (
+          <div className="fixed inset-0 bg-gray-100 flex items-center justify-center z-50">
+              <div className="bg-white p-10 rounded-xl shadow-2xl text-center max-w-lg">
+                  <h1 className="text-3xl font-bold mb-4 text-primary">Ready to Begin?</h1>
+                  <p className="text-gray-600 mb-8">
+                      Click the button below to enter Full Screen mode and start the exam. 
+                      Please ensure your webcam is connected.
+                  </p>
+                  <Button onClick={enterFullScreen} fullWidth>
+                      <Maximize className="mr-2" size={20} /> Enter Full Screen & Start
+                  </Button>
+              </div>
+          </div>
+      );
+  }
 
   const currentQuestion = exam.questions[currentQuestionIndex];
 
   return (
-    <div className="flex h-screen bg-background text-text">
+    <div ref={containerRef} className="flex h-screen bg-background text-text">
+      
+      {/* Full Screen Warning Overlay */}
+      {!isFullScreen && (
+          <div className="absolute inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center text-white">
+              <AlertCircle size={64} className="text-red-500 mb-4" />
+              <h2 className="text-3xl font-bold mb-2">Full Screen Required</h2>
+              <p className="mb-6">You must remain in full screen mode to continue the exam.</p>
+              <Button onClick={enterFullScreen}>Return to Full Screen</Button>
+          </div>
+      )}
+
       <div className="flex-1 flex flex-col p-8 overflow-y-auto">
         <div className="flex-1">
           <h1 className="text-3xl font-bold mb-2">{exam.title}</h1>
