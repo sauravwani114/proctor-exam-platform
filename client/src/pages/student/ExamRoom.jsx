@@ -163,7 +163,7 @@ const ExamRoom = () => {
           initialAnswers[q._id] = q.questionType === 'mcq' ? null : '';
         });
         setAnswers(initialAnswers);
-        socketRef.current = io('http://localhost:5000');
+        socketRef.current = io(import.meta.env.VITE_API_URL);
         socketRef.current.on('connect', () => {
           socketRef.current.emit('join-exam-room', { submissionId: subData.submissionId });
         });
