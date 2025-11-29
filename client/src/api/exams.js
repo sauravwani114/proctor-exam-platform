@@ -1,5 +1,5 @@
 import axios from 'axios';
-const API_URL = 'http://localhost:5000/api/v1/exams';
+const API_URL = `${import.meta.env.VITE_API_URL}/api/v1/exams`;
 
 export const createExam = async (examData, token) => {
   const config = { headers: { Authorization: `Bearer ${token}` } };
