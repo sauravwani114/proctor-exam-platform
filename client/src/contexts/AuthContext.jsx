@@ -4,35 +4,43 @@ import { logout as logoutUser } from '../api/auth';
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
+  // CHANGE: Check sessionStorage instead of localStorage
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(sessionStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser && token) {
+    // CHANGE: Check sessionStorage
+    const storedUser = sessionStorage.getItem('user');
+    const storedToken = sessionStorage.getItem('token');
+    
+    if (storedUser && storedToken) {
       setUser(JSON.parse(storedUser));
+      setToken(storedToken);
     }
     setLoading(false);
-  }, [token]);
+  }, []);
 
   const login = (userData, userToken) => {
     setUser(userData);
     setToken(userToken);
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('token', userToken);
+    // CHANGE: Use sessionStorage
+    sessionStorage.setItem('user', JSON.stringify(userData));
+    sessionStorage.setItem('token', userToken);
   };
 
   const logout = () => {
     logoutUser();
     setUser(null);
     setToken(null);
+    // CHANGE: Clear sessionStorage
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('token');
   };
 
-  // --- NEW FUNCTION: Update User State without Logout ---
   const updateUser = (updatedUser) => {
     setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
   const authContextValue = {
@@ -40,7 +48,7 @@ export const AuthProvider = ({ children }) => {
     token,
     login,
     logout,
-    updateUser, // Export new function
+    updateUser,
     isAuthenticated: !!token,
     loading,
   };
