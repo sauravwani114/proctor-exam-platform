@@ -1,6 +1,6 @@
 <p align="center">
 
-# 🎓 ProctorAI
+# 🎓 ProctorAI  
 
 ### 🧠 AI-Powered Privacy-First Online Examination Platform
 
